@@ -29,6 +29,13 @@ def generate_hirarc(request: HIRARCRequest):
     prompt = f"""You are a certified HSE professional trained in Malaysian 
 occupational safety standards (OSHA 1994, FMA 1967, BOWEC 1986).
 
+IMPORTANT LANGUAGE RULE:
+- Detect the language used in the work description below
+- If Bahasa Malaysia → respond entirely in Bahasa Malaysia
+- If English → respond entirely in English
+- If Mandarin → respond entirely in Mandarin
+- Always match the input language for ALL fields in the output
+
 Generate a complete HIRARC table for the following work:
 
 Project/Location: {request.project_location}
@@ -58,22 +65,6 @@ Return ONLY a JSON array with this exact structure, no other text:
 ]
 
 Generate at least 5 rows covering all major activities and hazards.
-RPN = severity x occurrence. 
-Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME."""
-
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    
-    import json
-    response_text = message.content[0].text
-    hirarc_data = json.loads(response_text)
-    
-    return {
-        "status": "success",
-        "project_location": request.project_location,
-        "conducted_by": request.conducted_by,
-        "hirarc_rows": hirarc_data
-    }
+RPN = severity x occurrence.
+Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME.
+Legal references must cite actual Malaysian laws and standards."""
