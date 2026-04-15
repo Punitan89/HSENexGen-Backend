@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import anthropic
 import os
+import json
 
 app = FastAPI()
 
@@ -26,14 +27,15 @@ def read_root():
 
 @app.post("/generate-hirarc")
 def generate_hirarc(request: HIRARCRequest):
-    prompt = f"""You are a certified HSE professional trained in Malaysian 
+    try:
+        prompt = f"""You are a certified HSE professional trained in Malaysian 
 occupational safety standards (OSHA 1994, FMA 1967, BOWEC 1986).
 
 IMPORTANT LANGUAGE RULE:
 - Detect the language used in the work description below
-- If Bahasa Malaysia → respond entirely in Bahasa Malaysia
-- If English → respond entirely in English
-- If Mandarin → respond entirely in Mandarin
+- If Bahasa Malaysia respond entirely in Bahasa Malaysia
+- If English respond entirely in English
+- If Mandarin respond entirely in Mandarin
 - Always match the input language for ALL fields in the output
 
 Generate a complete HIRARC table for the following work:
@@ -68,3 +70,34 @@ Generate at least 5 rows covering all major activities and hazards.
 RPN = severity x occurrence.
 Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME.
 Legal references must cite actual Malaysian laws and standards."""
+
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        response_text = message.content[0].text
+        
+        # Clean response in case of markdown
+        response_text = response_text.strip()
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        response_text = response_text.strip()
+        
+        hirarc_data = json.loads(response_text)
+        
+        return {
+            "status": "success",
+            "project_location": request.project_location,
+            "conducted_by": request.conducted_by,
+            "hirarc_rows": hirarc_data
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
