@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import anthropic
 import os
 import json
+import re
 
 app = FastAPI()
 
@@ -28,8 +29,7 @@ def read_root():
 @app.post("/generate-hirarc")
 def generate_hirarc(request: HIRARCRequest):
     try:
-        prompt = f"""You are a certified HSE professional trained in Malaysian 
-occupational safety standards (OSHA 1994, FMA 1967, BOWEC 1986).
+        prompt = f"""You are a certified HSE professional trained in Malaysian occupational safety standards (OSHA 1994, FMA 1967, BOWEC 1986).
 
 IMPORTANT LANGUAGE RULE:
 - Detect the language used in the work description below
@@ -39,12 +39,11 @@ IMPORTANT LANGUAGE RULE:
 - Always match the input language for ALL fields in the output
 
 Generate a complete HIRARC table for the following work:
-
 Project/Location: {request.project_location}
 Conducted By: {request.conducted_by}
 Work Description: {request.work_description}
 
-Return ONLY a JSON array with this exact structure, no other text:
+Return ONLY a valid JSON array with this exact structure, no markdown, no backticks, no explanation, just the raw JSON array:
 [
   {{
     "sn": 1,
@@ -65,39 +64,57 @@ Return ONLY a JSON array with this exact structure, no other text:
     "responsible_person": "Site Supervisor"
   }}
 ]
-
 Generate at least 5 rows covering all major activities and hazards.
 RPN = severity x occurrence.
 Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME.
 Legal references must cite actual Malaysian laws and standards."""
 
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-haiku-4-5-20251001",
             max_tokens=4000,
             messages=[{"role": "user", "content": prompt}]
         )
-        
-        response_text = message.content[0].text
-        
-        # Clean response in case of markdown
+
+        response_text = message.content[0].text.strip()
+
+        # Log raw response for debugging
+        print(f"Raw AI response: {response_text[:200]}")
+
+        # Check empty response
+        if not response_text:
+            return {
+                "status": "error",
+                "message": "Empty response from AI model"
+            }
+
+        # Remove markdown code blocks if present
+        response_text = re.sub(r'```json\s*', '', response_text)
+        response_text = re.sub(r'```\s*', '', response_text)
         response_text = response_text.strip()
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-        response_text = response_text.strip()
-        
+
+        # Find JSON array in response
+        start = response_text.find('[')
+        end = response_text.rfind(']') + 1
+        if start != -1 and end > start:
+            response_text = response_text[start:end]
+
         hirarc_data = json.loads(response_text)
-        
+
         return {
             "status": "success",
             "project_location": request.project_location,
             "conducted_by": request.conducted_by,
             "hirarc_rows": hirarc_data
         }
-        
+
+    except json.JSONDecodeError as e:
+        return {
+            "status": "error",
+            "message": f"JSON parse error: {str(e)}",
+            "raw_response": response_text[:500] if 'response_text' in locals() else "No response"
+        }
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e)
+            "message": f"Error: {str(e)}"
         }
