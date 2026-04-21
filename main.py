@@ -43,7 +43,8 @@ Project/Location: {request.project_location}
 Conducted By: {request.conducted_by}
 Work Description: {request.work_description}
 
-Return ONLY a valid JSON array with this exact structure, no markdown, no backticks, no explanation, just the raw JSON array:
+CRITICAL: Return ONLY a raw JSON array. No markdown. No backticks. No ```json. No explanation. Start your response with [ and end with ].
+
 [
   {{
     "sn": 1,
@@ -64,6 +65,7 @@ Return ONLY a valid JSON array with this exact structure, no markdown, no backti
     "responsible_person": "Site Supervisor"
   }}
 ]
+
 Generate at least 5 rows covering all major activities and hazards.
 RPN = severity x occurrence.
 Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME.
@@ -88,15 +90,19 @@ Legal references must cite actual Malaysian laws and standards."""
             }
 
         # Remove markdown code blocks if present
-        response_text = re.sub(r'```json\s*', '', response_text)
-        response_text = re.sub(r'```\s*', '', response_text)
+        if '```' in response_text:
+            response_text = response_text.split('```')[1]
+            if response_text.startswith('json'):
+                response_text = response_text[4:]
         response_text = response_text.strip()
 
-        # Find JSON array in response
+        # Find JSON array - extract everything from [ to ]
         start = response_text.find('[')
         end = response_text.rfind(']') + 1
         if start != -1 and end > start:
             response_text = response_text[start:end]
+
+        print(f"Cleaned response: {response_text[:200]}")
 
         hirarc_data = json.loads(response_text)
 
