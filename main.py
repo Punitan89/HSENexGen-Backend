@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import anthropic
 import os
 import json
 import re
+import io
 
 app = FastAPI()
 
@@ -21,6 +23,11 @@ class HIRARCRequest(BaseModel):
     project_location: str
     conducted_by: str
     work_description: str
+
+class PDFRequest(BaseModel):
+    project_location: str
+    conducted_by: str
+    hirarc_rows: list
 
 @app.get("/")
 def read_root():
@@ -78,32 +85,23 @@ Legal references must cite actual Malaysian laws and standards."""
         )
 
         response_text = message.content[0].text.strip()
-
-        # Log raw response for debugging
         print(f"Raw AI response: {response_text[:200]}")
 
-        # Check empty response
         if not response_text:
-            return {
-                "status": "error",
-                "message": "Empty response from AI model"
-            }
+            return {"status": "error", "message": "Empty response from AI model"}
 
-        # Remove markdown code blocks if present
         if '```' in response_text:
             response_text = response_text.split('```')[1]
             if response_text.startswith('json'):
                 response_text = response_text[4:]
         response_text = response_text.strip()
 
-        # Find JSON array - extract everything from [ to ]
         start = response_text.find('[')
         end = response_text.rfind(']') + 1
         if start != -1 and end > start:
             response_text = response_text[start:end]
 
         print(f"Cleaned response: {response_text[:200]}")
-
         hirarc_data = json.loads(response_text)
 
         return {
@@ -114,13 +112,53 @@ Legal references must cite actual Malaysian laws and standards."""
         }
 
     except json.JSONDecodeError as e:
-        return {
-            "status": "error",
-            "message": f"JSON parse error: {str(e)}",
-            "raw_response": response_text[:500] if 'response_text' in locals() else "No response"
-        }
+        return {"status": "error", "message": f"JSON parse error: {str(e)}"}
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error: {str(e)}"
-        }
+        return {"status": "error", "message": f"Error: {str(e)}"}
+
+@app.post("/generate-pdf")
+def generate_pdf(request: PDFRequest):
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import inch
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=0.5*inch, rightMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        elements = []
+        styles = getSampleStyleSheet()
+
+        elements.append(Paragraph("HIRARC REPORT", styles['Title']))
+        elements.append(Paragraph(f"Project: {request.project_location} | Conducted By: {request.conducted_by}", styles['Normal']))
+        elements.append(Spacer(1, 0.2*inch))
+
+        headers = ['No', 'Activity', 'Hazard', 'Sev', 'Occ', 'RPN', 'Controls']
+        data = [headers]
+        for row in request.hirarc_rows:
+            data.append([
+                str(row.get('sn', '')),
+                str(row.get('activity', ''))[:40],
+                str(row.get('hazard', ''))[:40],
+                str(row.get('initial_severity', '')),
+                str(row.get('initial_occurrence', '')),
+                str(row.get('initial_rpn', '')),
+                str(row.get('existing_controls', ''))[:50],
+            ])
+
+        table = Table(data, colWidths=[0.4*inch, 2*inch, 2*inch, 0.4*inch, 0.4*inch, 0.4*inch, 2.5*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.green),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTSIZE', (0,0), (-1,-1), 7),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.lightgrey]),
+        ]))
+        elements.append(table)
+        doc.build(elements)
+        buffer.seek(0)
+
+        return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=HIRARC_Report.pdf"})
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
