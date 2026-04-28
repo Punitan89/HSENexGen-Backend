@@ -136,7 +136,7 @@ def generate_pdf(request: PDFRequest):
 
         headers = ['No', 'Activity', 'Hazard', 'Sev', 'Occ', 'RPN', 'Controls']
         data = [headers]
-     for i, row in enumerate(request.hirarc_rows):
+        for i, row in enumerate(request.hirarc_rows):
             if isinstance(row, dict):
                 data.append([
                     str(row.get('sn', i+1)),
