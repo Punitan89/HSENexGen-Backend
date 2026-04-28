@@ -7,6 +7,7 @@ import os
 import json
 import re
 import io
+import base64
 
 app = FastAPI()
 
@@ -162,6 +163,10 @@ def generate_pdf(request: PDFRequest):
         doc.build(elements)
         buffer.seek(0)
 
-        return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=HIRARC_Report.pdf"})
+        pdf_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+        data_url = f"data:application/pdf;base64,{pdf_base64}"
+
+        return {"status": "success", "pdf_url": data_url}
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
