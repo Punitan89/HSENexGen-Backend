@@ -136,16 +136,19 @@ def generate_pdf(request: PDFRequest):
 
         headers = ['No', 'Activity', 'Hazard', 'Sev', 'Occ', 'RPN', 'Controls']
         data = [headers]
-        for row in request.hirarc_rows:
-            data.append([
-                str(row.get('sn', '')),
-                str(row.get('activity', ''))[:40],
-                str(row.get('hazard', ''))[:40],
-                str(row.get('initial_severity', '')),
-                str(row.get('initial_occurrence', '')),
-                str(row.get('initial_rpn', '')),
-                str(row.get('existing_controls', ''))[:50],
-            ])
+     for i, row in enumerate(request.hirarc_rows):
+            if isinstance(row, dict):
+                data.append([
+                    str(row.get('sn', i+1)),
+                    str(row.get('activity', ''))[:40],
+                    str(row.get('hazard', ''))[:40],
+                    str(row.get('initial_severity', '')),
+                    str(row.get('initial_occurrence', '')),
+                    str(row.get('initial_rpn', '')),
+                    str(row.get('existing_controls', ''))[:50],
+                ])
+            else:
+                data.append([str(i+1), str(row)[:40], '', '', '', '', ''])
 
         table = Table(data, colWidths=[0.4*inch, 2*inch, 2*inch, 0.4*inch, 0.4*inch, 0.4*inch, 2.5*inch])
         table.setStyle(TableStyle([
