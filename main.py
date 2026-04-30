@@ -26,7 +26,7 @@ class HIRARCRequest(BaseModel):
 class PDFRequest(BaseModel):
     project_location: str
     conducted_by: str
-    hirarc_rows: list
+    hirarc_rows: str
 
 @app.get("/")
 def read_root():
@@ -124,6 +124,14 @@ def generate_pdf(request: PDFRequest):
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import inch
 
+        # Parse string to list
+        try:
+            rows = json.loads(request.hirarc_rows)
+            if not isinstance(rows, list):
+                rows = []
+        except Exception:
+            rows = []
+
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=0.5*inch, rightMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
         elements = []
@@ -135,7 +143,7 @@ def generate_pdf(request: PDFRequest):
 
         headers = ['No', 'Activity', 'Hazard', 'Sev', 'Occ', 'RPN', 'Controls']
         data = [headers]
-        for i, row in enumerate(request.hirarc_rows):
+        for i, row in enumerate(rows):
             if isinstance(row, dict):
                 data.append([
                     str(row.get('sn', i+1)),
