@@ -61,7 +61,7 @@ CRITICAL: Return ONLY a raw JSON array. No markdown. No backticks. No ```json. N
     "activity": "activity name",
     "conditions": "R",
     "hazard": "hazard description",
-    "risk_impact": "potential impact",
+    "risk_impact": "potential impact on people or environment",
     "initial_severity": 3,
     "initial_occurrence": 3,
     "initial_rpn": 9,
@@ -200,21 +200,25 @@ def generate_pdf(request: PDFRequest):
         ))
         elements.append(Spacer(1, 0.2*inch))
 
-        headers = ['No', 'Activity', 'Hazard', 'Sev', 'Occ', 'RPN', 'Controls']
+        # ✅ UPDATED HEADERS — with Risk Impact column
+        headers = ['No', 'Activity', 'Hazard', 'Risk Impact', 'Sev', 'Occ', 'RPN', 'Controls']
         data = [headers]
         for i, row in enumerate(rows):
             data.append([
                 str(row.get('sn', i+1)),
                 str(row.get('activity', ''))[:40],
                 str(row.get('hazard', ''))[:40],
+                str(row.get('risk_impact', ''))[:35],
                 str(row.get('initial_severity', '')),
                 str(row.get('initial_occurrence', '')),
                 str(row.get('initial_rpn', '')),
                 str(row.get('existing_controls', ''))[:50],
             ])
 
-        table = Table(data, colWidths=[0.4*inch, 2*inch, 2*inch,
-                                        0.4*inch, 0.4*inch, 0.4*inch, 2.5*inch])
+        # ✅ UPDATED COLUMN WIDTHS — fits landscape A4
+        table = Table(data, colWidths=[0.3*inch, 1.6*inch, 1.6*inch,
+                                        1.6*inch, 0.35*inch, 0.35*inch,
+                                        0.35*inch, 2.0*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.green),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
