@@ -19,6 +19,9 @@ app.add_middleware(
 
 client = anthropic.Anthropic(api_key=os.environ.get("CLAUDE_API_KEY"))
 
+# ✅ MEMORY STORE — saves last HIRARC result
+last_hirarc_store = {}
+
 class HIRARCRequest(BaseModel):
     project_location: str
     conducted_by: str
@@ -27,7 +30,7 @@ class HIRARCRequest(BaseModel):
 class PDFRequest(BaseModel):
     project_location: Optional[str] = ""
     conducted_by: Optional[str] = ""
-    hirarc_rows: Union[list, str]
+    hirarc_rows: Union[list, str] = ""
 
 @app.get("/")
 def read_root():
@@ -104,6 +107,12 @@ Legal references must cite actual Malaysian laws and standards."""
         print(f"Cleaned response: {response_text[:200]}")
         hirarc_data = json.loads(response_text)
 
+        # ✅ SAVE TO MEMORY STORE
+        last_hirarc_store["rows"] = hirarc_data
+        last_hirarc_store["project_location"] = request.project_location
+        last_hirarc_store["conducted_by"] = request.conducted_by
+        print(f"Stored {len(hirarc_data)} rows in memory")
+
         return {
             "status": "success",
             "project_location": request.project_location,
@@ -125,31 +134,28 @@ def generate_pdf(request: PDFRequest):
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import inch
 
-        print(f"project_location: {request.project_location}")
-        print(f"conducted_by: {request.conducted_by}")
-        print(f"hirarc_rows type: {type(request.hirarc_rows)}")
-        print(f"hirarc_rows preview: {str(request.hirarc_rows)[:300]}")
+        print(f"project_location received: {request.project_location}")
+        print(f"conducted_by received: {request.conducted_by}")
+        print(f"hirarc_rows received: {str(request.hirarc_rows)[:100]}")
 
-        # Fix project_location and conducted_by if literal placeholders
+        # ✅ GET project_location — use received value OR fall back to stored
         proj = request.project_location
-        if not proj or proj == "[project_location]":
-            proj = "HSE NexGen Project"
+        if not proj or proj.strip() == "" or proj == "[project_location]":
+            proj = last_hirarc_store.get("project_location", "HSE NexGen Project")
 
+        # ✅ GET conducted_by — use received value OR fall back to stored
         cond = request.conducted_by
-        if not cond or cond == "[conducted_by]":
-            cond = "HSE Officer"
+        if not cond or cond.strip() == "" or cond == "[conducted_by]":
+            cond = last_hirarc_store.get("conducted_by", "HSE Officer")
 
-        # Robust parsing for hirarc_rows
+        # ✅ GET hirarc_rows — use received value OR fall back to stored
         rows = []
         raw = request.hirarc_rows
 
-        if isinstance(raw, list):
+        if isinstance(raw, list) and len(raw) > 0:
             rows = raw
         elif isinstance(raw, str):
-            # Remove literal placeholder
-            if raw == "[hirarc_rows]":
-                rows = []
-            else:
+            if raw and raw != "[hirarc_rows]" and raw.strip() != "":
                 try:
                     parsed = json.loads(raw)
                     if isinstance(parsed, list):
@@ -160,6 +166,11 @@ def generate_pdf(request: PDFRequest):
                             rows = parsed2
                 except:
                     rows = []
+
+        # ✅ FALLBACK TO MEMORY STORE if still empty
+        if len(rows) == 0:
+            rows = last_hirarc_store.get("rows", [])
+            print(f"Using stored rows: {len(rows)}")
 
         clean_rows = []
         for row in rows:
@@ -173,6 +184,7 @@ def generate_pdf(request: PDFRequest):
 
         rows = clean_rows
         print(f"Final rows count: {len(rows)}")
+        print(f"Project: {proj} | Conducted by: {cond}")
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
