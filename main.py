@@ -19,7 +19,7 @@ app.add_middleware(
 
 client = anthropic.Anthropic(api_key=os.environ.get("CLAUDE_API_KEY"))
 
-# ✅ MEMORY STORE — saves last HIRARC result
+# ✅ MEMORY STORE
 last_hirarc_store = {}
 
 class HIRARCRequest(BaseModel):
@@ -131,24 +131,24 @@ def generate_pdf(request: PDFRequest):
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib import colors
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
 
         print(f"project_location received: {request.project_location}")
         print(f"conducted_by received: {request.conducted_by}")
         print(f"hirarc_rows received: {str(request.hirarc_rows)[:100]}")
 
-        # ✅ GET project_location — use received value OR fall back to stored
+        # ✅ project_location fallback
         proj = request.project_location
         if not proj or proj.strip() == "" or proj == "[project_location]":
             proj = last_hirarc_store.get("project_location", "HSE NexGen Project")
 
-        # ✅ GET conducted_by — use received value OR fall back to stored
+        # ✅ conducted_by fallback
         cond = request.conducted_by
         if not cond or cond.strip() == "" or cond == "[conducted_by]":
             cond = last_hirarc_store.get("conducted_by", "HSE Officer")
 
-        # ✅ GET hirarc_rows — use received value OR fall back to stored
+        # ✅ hirarc_rows fallback
         rows = []
         raw = request.hirarc_rows
 
@@ -167,7 +167,6 @@ def generate_pdf(request: PDFRequest):
                 except:
                     rows = []
 
-        # ✅ FALLBACK TO MEMORY STORE if still empty
         if len(rows) == 0:
             rows = last_hirarc_store.get("rows", [])
             print(f"Using stored rows: {len(rows)}")
@@ -193,6 +192,21 @@ def generate_pdf(request: PDFRequest):
         elements = []
         styles = getSampleStyleSheet()
 
+        # ✅ CELL STYLES with word wrap
+        cell_style = ParagraphStyle(
+            'cell',
+            fontSize=7,
+            leading=9,
+            wordWrap='CJK',
+        )
+        header_style = ParagraphStyle(
+            'header',
+            fontSize=7,
+            leading=9,
+            textColor=colors.white,
+            fontName='Helvetica-Bold',
+        )
+
         elements.append(Paragraph("HIRARC REPORT", styles['Title']))
         elements.append(Paragraph(
             f"Project: {proj} | Conducted By: {cond}",
@@ -200,31 +214,44 @@ def generate_pdf(request: PDFRequest):
         ))
         elements.append(Spacer(1, 0.2*inch))
 
-        # ✅ UPDATED HEADERS — with Risk Impact column
+        # ✅ HEADERS
         headers = ['No', 'Activity', 'Hazard', 'Risk Impact', 'Sev', 'Occ', 'RPN', 'Controls']
-        data = [headers]
+        data = [[Paragraph(h, header_style) for h in headers]]
+
+        # ✅ ROWS with word wrap
         for i, row in enumerate(rows):
             data.append([
-                str(row.get('sn', i+1)),
-                str(row.get('activity', ''))[:40],
-                str(row.get('hazard', ''))[:40],
-                str(row.get('risk_impact', ''))[:35],
-                str(row.get('initial_severity', '')),
-                str(row.get('initial_occurrence', '')),
-                str(row.get('initial_rpn', '')),
-                str(row.get('existing_controls', ''))[:50],
+                Paragraph(str(row.get('sn', i+1)), cell_style),
+                Paragraph(str(row.get('activity', '')), cell_style),
+                Paragraph(str(row.get('hazard', '')), cell_style),
+                Paragraph(str(row.get('risk_impact', '')), cell_style),
+                Paragraph(str(row.get('initial_severity', '')), cell_style),
+                Paragraph(str(row.get('initial_occurrence', '')), cell_style),
+                Paragraph(str(row.get('initial_rpn', '')), cell_style),
+                Paragraph(str(row.get('existing_controls', '')), cell_style),
             ])
 
-        # ✅ UPDATED COLUMN WIDTHS — fits landscape A4
-        table = Table(data, colWidths=[0.3*inch, 1.6*inch, 1.6*inch,
-                                        1.6*inch, 0.35*inch, 0.35*inch,
-                                        0.35*inch, 2.0*inch])
+        # ✅ COLUMN WIDTHS
+        table = Table(data, colWidths=[
+            0.3*inch,
+            1.7*inch,
+            1.7*inch,
+            1.5*inch,
+            0.35*inch,
+            0.35*inch,
+            0.35*inch,
+            2.1*inch,
+        ])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.green),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('FONTSIZE', (0,0), (-1,-1), 7),
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.lightgrey]),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ]))
         elements.append(table)
         doc.build(elements)
