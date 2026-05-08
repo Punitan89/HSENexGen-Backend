@@ -76,7 +76,7 @@ CRITICAL: Return ONLY a raw JSON array. No markdown. No backticks. No ```json. N
   }}
 ]
 
-Generate at least 5 rows covering all major activities and hazards.
+Generate at least 8 rows covering all major activities and hazards.
 RPN = severity x occurrence.
 Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME.
 Legal references must cite actual Malaysian laws and standards."""
