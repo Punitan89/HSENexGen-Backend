@@ -7,6 +7,7 @@ import os
 import json
 import io
 import base64
+from datetime import datetime
 
 app = FastAPI()
 
@@ -138,17 +139,15 @@ def generate_pdf(request: PDFRequest):
         print(f"conducted_by received: {request.conducted_by}")
         print(f"hirarc_rows received: {str(request.hirarc_rows)[:100]}")
 
-        # ✅ project_location fallback
+        # ✅ Fallbacks
         proj = request.project_location
         if not proj or proj.strip() == "" or proj == "[project_location]":
             proj = last_hirarc_store.get("project_location", "HSE NexGen Project")
 
-        # ✅ conducted_by fallback
         cond = request.conducted_by
         if not cond or cond.strip() == "" or cond == "[conducted_by]":
             cond = last_hirarc_store.get("conducted_by", "HSE Officer")
 
-        # ✅ hirarc_rows fallback
         rows = []
         raw = request.hirarc_rows
 
@@ -183,7 +182,8 @@ def generate_pdf(request: PDFRequest):
 
         rows = clean_rows
         print(f"Final rows count: {len(rows)}")
-        print(f"Project: {proj} | Conducted by: {cond}")
+
+        today = datetime.now().strftime("%d/%m/%Y")
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
@@ -192,33 +192,69 @@ def generate_pdf(request: PDFRequest):
         elements = []
         styles = getSampleStyleSheet()
 
-        # ✅ CELL STYLES with word wrap
-        cell_style = ParagraphStyle(
-            'cell',
-            fontSize=7,
-            leading=9,
-            wordWrap='CJK',
-        )
-        header_style = ParagraphStyle(
-            'header',
-            fontSize=7,
-            leading=9,
-            textColor=colors.white,
-            fontName='Helvetica-Bold',
-        )
+        # ✅ STYLES
+        cell_style = ParagraphStyle('cell', fontSize=7, leading=9, wordWrap='CJK')
+        header_style = ParagraphStyle('header', fontSize=7, leading=9,
+                                      textColor=colors.white, fontName='Helvetica-Bold')
+        label_style = ParagraphStyle('label', fontSize=7, leading=9,
+                                     fontName='Helvetica-Bold')
+        value_style = ParagraphStyle('value', fontSize=7, leading=9)
 
-        elements.append(Paragraph("HIRARC REPORT", styles['Title']))
-        elements.append(Paragraph(
-            f"Project: {proj} | Conducted By: {cond}",
-            styles['Normal']
-        ))
-        elements.append(Spacer(1, 0.2*inch))
+        gray = colors.Color(0.85, 0.85, 0.85)
 
-        # ✅ HEADERS
+        # ✅ TITLE
+        elements.append(Paragraph("HAZARD IDENTIFICATION, RISK ASSESSMENT AND RISK CONTROL (HIRARC)",
+                                   styles['Title']))
+        elements.append(Spacer(1, 0.1*inch))
+
+        # ✅ HEADER INFO TABLE
+        header_data = [
+            [
+                Paragraph("Company & Package No :", label_style), "",
+                Paragraph("HIRARC No :", label_style), ""
+            ],
+            [
+                Paragraph("Process / Location :", label_style),
+                Paragraph(proj, value_style),
+                "", ""
+            ],
+            [
+                Paragraph("Conducted by :", label_style),
+                Paragraph(cond, value_style),
+                Paragraph("Reviewed by :", label_style), ""
+            ],
+            [
+                Paragraph("Date Conducted :", label_style),
+                Paragraph(today, value_style),
+                Paragraph("Last Review Date :", label_style),
+                Paragraph(today, value_style)
+            ],
+            [
+                Paragraph("Approved by :", label_style), "",
+                Paragraph("Next Review Date :", label_style), ""
+            ],
+        ]
+
+        header_table = Table(header_data, colWidths=[1.8*inch, 3.5*inch, 1.8*inch, 2.0*inch])
+        header_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('BACKGROUND', (0,0), (0,-1), gray),
+            ('BACKGROUND', (2,0), (2,-1), gray),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('SPAN', (1,0), (1,0)),
+            ('SPAN', (1,4), (1,4)),
+        ]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+        # ✅ HIRARC TABLE
         headers = ['No', 'Activity', 'Hazard', 'Risk Impact', 'Sev', 'Occ', 'RPN', 'Controls']
         data = [[Paragraph(h, header_style) for h in headers]]
 
-        # ✅ ROWS with word wrap
         for i, row in enumerate(rows):
             data.append([
                 Paragraph(str(row.get('sn', i+1)), cell_style),
@@ -231,16 +267,9 @@ def generate_pdf(request: PDFRequest):
                 Paragraph(str(row.get('existing_controls', '')), cell_style),
             ])
 
-        # ✅ COLUMN WIDTHS
         table = Table(data, colWidths=[
-            0.3*inch,
-            1.7*inch,
-            1.7*inch,
-            1.5*inch,
-            0.35*inch,
-            0.35*inch,
-            0.35*inch,
-            2.1*inch,
+            0.3*inch, 1.7*inch, 1.7*inch, 1.5*inch,
+            0.35*inch, 0.35*inch, 0.35*inch, 2.1*inch
         ])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.green),
@@ -254,6 +283,7 @@ def generate_pdf(request: PDFRequest):
             ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ]))
         elements.append(table)
+
         doc.build(elements)
         buffer.seek(0)
         pdf_base64 = base64.b64encode(buffer.read()).decode('utf-8')
