@@ -8,6 +8,7 @@ import json
 import io
 import base64
 from datetime import datetime
+from supabase import create_client, Client
 
 app = FastAPI()
 
@@ -20,6 +21,12 @@ app.add_middleware(
 
 client = anthropic.Anthropic(api_key=os.environ.get("CLAUDE_API_KEY"))
 
+# ✅ SUPABASE CLIENT
+supabase: Client = create_client(
+    os.environ.get("SUPABASE_URL"),
+    os.environ.get("SUPABASE_KEY")
+)
+
 # ✅ MEMORY STORE
 last_hirarc_store = {}
 
@@ -27,6 +34,7 @@ class HIRARCRequest(BaseModel):
     project_location: str
     conducted_by: str
     work_description: str
+    user_id: Optional[str] = None
 
 class PDFRequest(BaseModel):
     project_location: Optional[str] = ""
@@ -114,8 +122,53 @@ Legal references must cite actual Malaysian laws and standards."""
         last_hirarc_store["conducted_by"] = request.conducted_by
         print(f"Stored {len(hirarc_data)} rows in memory")
 
+        # ✅ SAVE TO SUPABASE
+        hirarc_record = {
+            "location": request.project_location,
+            "conducted_by": request.conducted_by,
+            "date_conducted": datetime.now().strftime("%Y-%m-%d"),
+            "status": "draft",
+            "ai_generated": True,
+            "raw_content": hirarc_data,
+        }
+
+        # Add user_id if provided
+        if request.user_id:
+            hirarc_record["created_by"] = request.user_id
+
+        result = supabase.table("hirarc_records").insert(hirarc_record).execute()
+        hirarc_id = result.data[0]["id"]
+        print(f"Saved to hirarc_records with id: {hirarc_id}")
+
+        # ✅ SAVE ROWS TO hirarc_rows
+        rows_to_insert = []
+        for row in hirarc_data:
+            rows_to_insert.append({
+                "hirarc_id": hirarc_id,
+                "sn": row.get("sn", 0),
+                "activity": row.get("activity", ""),
+                "conditions": row.get("conditions", "R"),
+                "hazard": row.get("hazard", ""),
+                "risk_impact": row.get("risk_impact", ""),
+                "initial_severity": row.get("initial_severity", 0),
+                "initial_occurrence": row.get("initial_occurrence", 0),
+                "initial_rpn": row.get("initial_rpn", 0),
+                "existing_controls": row.get("existing_controls", ""),
+                "legal_references": row.get("legal_references", ""),
+                "legality": row.get("legality", "Y"),
+                "residual_severity": row.get("residual_severity", 0),
+                "residual_occurrence": row.get("residual_occurrence", 0),
+                "residual_rpn": row.get("residual_rpn", 0),
+                "additional_controls": row.get("additional_controls", ""),
+                "responsible_person": row.get("responsible_person", ""),
+            })
+
+        supabase.table("hirarc_rows").insert(rows_to_insert).execute()
+        print(f"Saved {len(rows_to_insert)} rows to hirarc_rows")
+
         return {
             "status": "success",
+            "hirarc_id": hirarc_id,
             "project_location": request.project_location,
             "conducted_by": request.conducted_by,
             "hirarc_rows": hirarc_data
@@ -139,7 +192,6 @@ def generate_pdf(request: PDFRequest):
         print(f"conducted_by received: {request.conducted_by}")
         print(f"hirarc_rows received: {str(request.hirarc_rows)[:100]}")
 
-        # ✅ Fallbacks
         proj = request.project_location
         if not proj or proj.strip() == "" or proj == "[project_location]":
             proj = last_hirarc_store.get("project_location", "HSE NexGen Project")
@@ -192,7 +244,6 @@ def generate_pdf(request: PDFRequest):
         elements = []
         styles = getSampleStyleSheet()
 
-        # ✅ STYLES
         cell_style = ParagraphStyle('cell', fontSize=7, leading=9, wordWrap='CJK')
         header_style = ParagraphStyle('header', fontSize=7, leading=9,
                                       textColor=colors.white, fontName='Helvetica-Bold')
@@ -202,40 +253,29 @@ def generate_pdf(request: PDFRequest):
 
         gray = colors.Color(0.85, 0.85, 0.85)
 
-        # ✅ TITLE
-        elements.append(Paragraph("HAZARD IDENTIFICATION, RISK ASSESSMENT AND RISK CONTROL (HIRARC)",
-                                   styles['Title']))
+        elements.append(Paragraph(
+            "HAZARD IDENTIFICATION, RISK ASSESSMENT AND RISK CONTROL (HIRARC)",
+            styles['Title']))
         elements.append(Spacer(1, 0.1*inch))
 
-        # ✅ HEADER INFO TABLE
         header_data = [
-            [
-                Paragraph("Company & Package No :", label_style), "",
-                Paragraph("HIRARC No :", label_style), ""
-            ],
-            [
-                Paragraph("Process / Location :", label_style),
-                Paragraph(proj, value_style),
-                "", ""
-            ],
-            [
-                Paragraph("Conducted by :", label_style),
-                Paragraph(cond, value_style),
-                Paragraph("Reviewed by :", label_style), ""
-            ],
-            [
-                Paragraph("Date Conducted :", label_style),
-                Paragraph(today, value_style),
-                Paragraph("Last Review Date :", label_style),
-                Paragraph(today, value_style)
-            ],
-            [
-                Paragraph("Approved by :", label_style), "",
-                Paragraph("Next Review Date :", label_style), ""
-            ],
+            [Paragraph("Company & Package No :", label_style), "",
+             Paragraph("HIRARC No :", label_style), ""],
+            [Paragraph("Process / Location :", label_style),
+             Paragraph(proj, value_style), "", ""],
+            [Paragraph("Conducted by :", label_style),
+             Paragraph(cond, value_style),
+             Paragraph("Reviewed by :", label_style), ""],
+            [Paragraph("Date Conducted :", label_style),
+             Paragraph(today, value_style),
+             Paragraph("Last Review Date :", label_style),
+             Paragraph(today, value_style)],
+            [Paragraph("Approved by :", label_style), "",
+             Paragraph("Next Review Date :", label_style), ""],
         ]
 
-        header_table = Table(header_data, colWidths=[1.8*inch, 3.5*inch, 1.8*inch, 2.0*inch])
+        header_table = Table(header_data,
+                             colWidths=[1.8*inch, 3.5*inch, 1.8*inch, 2.0*inch])
         header_table.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
             ('BACKGROUND', (0,0), (0,-1), gray),
@@ -245,14 +285,12 @@ def generate_pdf(request: PDFRequest):
             ('RIGHTPADDING', (0,0), (-1,-1), 4),
             ('TOPPADDING', (0,0), (-1,-1), 4),
             ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('SPAN', (1,0), (1,0)),
-            ('SPAN', (1,4), (1,4)),
         ]))
         elements.append(header_table)
         elements.append(Spacer(1, 0.15*inch))
 
-        # ✅ HIRARC TABLE
-        headers = ['No', 'Activity', 'Hazard', 'Risk Impact', 'Sev', 'Occ', 'RPN', 'Controls']
+        headers = ['No', 'Activity', 'Hazard', 'Risk Impact',
+                   'Sev', 'Occ', 'RPN', 'Controls']
         data = [[Paragraph(h, header_style) for h in headers]]
 
         for i, row in enumerate(rows):
@@ -283,7 +321,6 @@ def generate_pdf(request: PDFRequest):
             ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ]))
         elements.append(table)
-
         doc.build(elements)
         buffer.seek(0)
         pdf_base64 = base64.b64encode(buffer.read()).decode('utf-8')
