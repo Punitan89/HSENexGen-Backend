@@ -64,6 +64,13 @@ Work Description: {request.work_description}
 
 CRITICAL: Return ONLY a raw JSON array. No markdown. No backticks. No ```json. No explanation. Start your response with [ and end with ].
 
+ROW COUNT RULES:
+- Simple work (1-2 activities): generate 8-10 rows
+- Medium work (3-5 activities): generate 10-15 rows
+- Complex/large scope work (6+ activities or big project): generate 15-20 rows
+- Cover ALL major activities and hazards — do NOT stop early!
+- Every activity must have at least 1-2 hazards identified
+
 [
   {{
     "sn": 1,
@@ -85,14 +92,13 @@ CRITICAL: Return ONLY a raw JSON array. No markdown. No backticks. No ```json. N
   }}
 ]
 
-Generate at least 8 rows covering all major activities and hazards.
 RPN = severity x occurrence.
 Risk levels: 1-4 LOW, 5-9 MEDIUM, 10-16 HIGH, 17-25 EXTREME.
 Legal references must cite actual Malaysian laws and standards."""
 
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=4000,
+            max_tokens=8000,
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -132,7 +138,6 @@ Legal references must cite actual Malaysian laws and standards."""
             "raw_content": hirarc_data,
         }
 
-        # Add user_id if provided
         if request.user_id:
             hirarc_record["created_by"] = request.user_id
 
