@@ -45,6 +45,28 @@ class PDFRequest(BaseModel):
 def read_root():
     return {"status": "HSE NexGen Backend Running"}
 
+@app.get("/get-hirarc-history")
+def get_hirarc_history(user_id: Optional[str] = None):
+    try:
+        query = supabase.table("hirarc_records")\
+            .select("id, location, conducted_by, date_conducted, status, created_at")\
+            .order("created_at", desc=True)\
+            .limit(20)
+
+        if user_id:
+            query = query.eq("created_by", user_id)
+
+        result = query.execute()
+        print(f"Fetched {len(result.data)} records")
+
+        return {
+            "status": "success",
+            "records": result.data
+        }
+    except Exception as e:
+        print(f"History Error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 @app.post("/generate-hirarc")
 def generate_hirarc(request: HIRARCRequest):
     try:
